@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -20,6 +21,13 @@ import (
 
 type Scan struct {
 	RequestTimeout time.Duration
+}
+
+type SiteResult struct {
+	Vulnerable  bool
+	HTTPResult  string
+	HTTPSResult string
+	Host        string
 }
 
 type ConfigFile struct {
@@ -82,15 +90,23 @@ func main() {
 
 func (s *Scan) Do(site string) {
 
-	httpVuln := s.ScanSite("http", site)
-	httpsVuln := s.ScanSite("https", site)
+	httpVuln, httpR := s.ScanSite("http", site)
+	httpsVuln, httpsR := s.ScanSite("https", site)
 
-	if httpVuln || httpsVuln {
-		fmt.Println(site)
+	b, err := json.Marshal(SiteResult{
+		Vulnerable:  httpVuln || httpsVuln,
+		HTTPResult:  httpR,
+		HTTPSResult: httpsR,
+		Host:        site,
+	})
+	if err != nil {
+		log.Printf("Could not marshal site: %s", err)
+		return
 	}
+	fmt.Println(string(b))
 }
 
-func (s *Scan) ScanSite(prefix, site string) bool {
+func (s *Scan) ScanSite(prefix, site string) (bool, string) {
 	siteURL := fmt.Sprintf("%s://%s", prefix, site)
 	fullURL := fmt.Sprintf("%s://%s.%s", prefix, site, ".myevilsite.com")
 	tr := &http.Transport{
@@ -107,19 +123,21 @@ func (s *Scan) ScanSite(prefix, site string) bool {
 
 	httpReq, err := http.NewRequest("GET", siteURL, nil)
 	if err != nil {
-		return false
+		log.Printf("Error creating request: %s", err)
+		return false, ""
 	}
 	httpReq.Header.Set("Origin", fullURL)
 	resp, err := client.Do(httpReq)
-	// scan HTTP
 	if err != nil {
-		return false
+		log.Printf("Error client doing: %s", err)
+		return false, ""
 	}
 	vulnerable := checkRespForCors(resp, site)
+	r, _ := json.Marshal(resp)
 	if vulnerable {
-		return true
+		return true, string(r)
 	}
-	return false
+	return false, string(r)
 }
 
 func checkRespForCors(r *http.Response, site string) bool {
