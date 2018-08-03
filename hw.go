@@ -133,7 +133,7 @@ func (s *Scan) ScanSite(prefix, site string) (bool, string) {
 		return false, ""
 	}
 	vulnerable := checkRespForCors(resp, site)
-	r, _ := json.Marshal(resp)
+	r, _ := json.Marshal(resp.Header)
 	if vulnerable {
 		return true, string(r)
 	}
